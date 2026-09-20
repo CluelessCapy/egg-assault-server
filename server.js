@@ -103,7 +103,15 @@ function safeSend(ws, msg) {
 
 const MAX_SUBMISSIONS = 300; // total ever kept in memory (pending+decided), oldest decided ones get dropped first
 const MAX_OBJECTS = 260;
-const OBJECT_TYPES = new Set(['wall', 'crate', 'pillar', 'platform', 'ramp']);
+const OBJECT_TYPES = new Set([
+  'wall', 'crate', 'pillar', 'platform', 'ramp',
+  'halfwall', 'stairs', 'arch', 'barrel', 'sphere', 'cone'
+]);
+// mirrors the "half" (center-to-boundary-wall) distances in the Map Studio's map-shapes.js
+const MAP_SIZE_HALF = { small: 34, medium: 58, large: 85 };
+function sanitizeMapSize(v) {
+  return (v === 'small' || v === 'large') ? v : 'medium';
+}
 const submissions = []; // newest last
 
 function clampNum(n, lo, hi, fallback) {
@@ -124,18 +132,21 @@ function cleanColor(c, fallback) {
 
 function sanitizeSubmission(body) {
   if (!body || typeof body !== 'object') return null;
+  const mapSize = sanitizeMapSize(body.mapSize);
+  const coordBound = MAP_SIZE_HALF[mapSize] - 2; // stay inside that size's boundary walls
   const objsIn = Array.isArray(body.objects) ? body.objects.slice(0, MAX_OBJECTS) : [];
   const objects = [];
   for (const o of objsIn) {
     if (!o || !OBJECT_TYPES.has(o.type)) continue;
     objects.push({
       type: o.type,
-      x: clampNum(o.x, -55, 55, 0),
-      z: clampNum(o.z, -55, 55, 0),
+      x: clampNum(o.x, -coordBound, coordBound, 0),
+      z: clampNum(o.z, -coordBound, coordBound, 0),
       w: clampNum(o.w, 0.3, 40, 2),
       d: clampNum(o.d, 0.3, 40, 2),
       h: clampNum(o.h, 0.3, 20, 2),
-      rot: clampNum(o.rot, 0, 359, 0)
+      rot: clampNum(o.rot, 0, 359, 0),
+      glow: !!o.glow
     });
   }
   if (!objects.length) return null;
@@ -154,6 +165,7 @@ function sanitizeSubmission(body) {
     tag: cleanStr(body.tag, 60).trim() || 'A custom arena',
     submitter: cleanStr(body.submitter, 24).trim() || 'Anonymous',
     theme: cleanStr(body.theme, 24) || 'custom',
+    mapSize,
     colors: {
       sky,
       fog: cleanColor(c.fog, '#bfe3fb'),
@@ -180,6 +192,7 @@ function publicApproved(sub) {
     name: sub.name,
     tag: sub.tag,
     submitter: sub.submitter,
+    mapSize: sub.mapSize,
     colors: sub.colors,
     objects: sub.objects
   };
