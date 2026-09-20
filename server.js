@@ -142,11 +142,12 @@ function sanitizeSubmission(body) {
       type: o.type,
       x: clampNum(o.x, -coordBound, coordBound, 0),
       z: clampNum(o.z, -coordBound, coordBound, 0),
-      w: clampNum(o.w, 0.3, 40, 2),
-      d: clampNum(o.d, 0.3, 40, 2),
-      h: clampNum(o.h, 0.3, 20, 2),
+      w: clampNum(o.w, 0.3, 300, 2),
+      d: clampNum(o.d, 0.3, 300, 2),
+      h: clampNum(o.h, 0.3, 300, 2),
       rot: clampNum(o.rot, 0, 359, 0),
-      glow: !!o.glow
+      glow: !!o.glow,
+      color: cleanColor(o.color, null)
     });
   }
   if (!objects.length) return null;
