@@ -165,6 +165,7 @@ module.exports = `<!doctype html>
             '<span><b>By</b> '+esc(s.submitter)+'</span>' +
             '<span><b>Pieces</b> '+count+'</span>' +
             '<span><b>Theme</b> '+esc(s.theme || 'custom')+'</span>' +
+            '<span><b>Size</b> '+esc(s.mapSize || 'medium')+'</span>' +
             '<span><b>Submitted</b> '+esc(fmtDate(s.submittedAt))+'</span>' +
           '</div>' +
           '<div class="swatches">'+swatchesFor(s.colors)+'</div>' +
