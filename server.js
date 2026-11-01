@@ -49,6 +49,7 @@ const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 
 const PORT = process.env.PORT || 3000;
+const START_TIME = Date.now();
 
 // Change this to whatever you like — it's the passphrase the /admin
 // page asks for before it'll show you pending map submissions.
@@ -314,6 +315,75 @@ const server = http.createServer((req, res) => {
     if (!sub) { sendJSON(res, 404, { ok: false, error: 'Not found (it may have been cleared by a restart).' }); return; }
     sub.status = action === 'approve' ? 'approved' : 'rejected';
     sendJSON(res, 200, { ok: true, status: sub.status });
+    return;
+  }
+
+  // Puts a previously approved/rejected submission back in the pending queue for re-review.
+  const revertMatch = path.match(/^\/api\/revert\/([a-zA-Z0-9_]+)$/);
+  if (revertMatch && req.method === 'POST') {
+    if (!checkKey(req, url)) { sendJSON(res, 401, { ok: false, error: 'Wrong or missing key.' }); return; }
+    const sub = submissions.find((s) => s.id === revertMatch[1]);
+    if (!sub) { sendJSON(res, 404, { ok: false, error: 'Not found (it may have been cleared by a restart).' }); return; }
+    sub.status = 'pending';
+    sendJSON(res, 200, { ok: true, status: sub.status });
+    return;
+  }
+
+  // Permanently removes a decided (approved/rejected) submission. Pending ones can't be
+  // deleted this way -- decide on them first, so nothing in the review queue vanishes by accident.
+  const deleteMatch = path.match(/^\/api\/delete\/([a-zA-Z0-9_]+)$/);
+  if (deleteMatch && req.method === 'POST') {
+    if (!checkKey(req, url)) { sendJSON(res, 401, { ok: false, error: 'Wrong or missing key.' }); return; }
+    const idx = submissions.findIndex((s) => s.id === deleteMatch[1]);
+    if (idx === -1) { sendJSON(res, 404, { ok: false, error: 'Not found (it may have been cleared by a restart).' }); return; }
+    if (submissions[idx].status === 'pending') { sendJSON(res, 400, { ok: false, error: 'Approve or reject it first.' }); return; }
+    submissions.splice(idx, 1);
+    sendJSON(res, 200, { ok: true });
+    return;
+  }
+
+  // Dashboard numbers for the admin page: submission counts by status, plus how many
+  // people are currently playing and how long this server process has been up.
+  if (path === '/api/stats' && req.method === 'GET') {
+    if (!checkKey(req, url)) { sendJSON(res, 401, { ok: false, error: 'Wrong or missing key.' }); return; }
+    let pending = 0, approved = 0, rejected = 0;
+    for (const s of submissions) {
+      if (s.status === 'pending') pending++;
+      else if (s.status === 'approved') approved++;
+      else if (s.status === 'rejected') rejected++;
+    }
+    let players = 0;
+    for (const room of rooms.values()) players += room.players.size;
+    sendJSON(res, 200, {
+      pending, approved, rejected, total: submissions.length,
+      rooms: rooms.size, players,
+      uptimeSec: Math.floor((Date.now() - START_TIME) / 1000)
+    });
+    return;
+  }
+
+  // Live room list, so the owner can see who's actually playing right now.
+  if (path === '/api/rooms' && req.method === 'GET') {
+    if (!checkKey(req, url)) { sendJSON(res, 401, { ok: false, error: 'Wrong or missing key.' }); return; }
+    const list = [...rooms.entries()].map(([code, room]) => ({
+      code,
+      mapId: room.mapId,
+      players: [...room.players.values()].map((p) => ({ name: p.name, kills: p.kills, alive: p.alive }))
+    }));
+    sendJSON(res, 200, list);
+    return;
+  }
+
+  // Disconnects everyone in a room (e.g. to clear out a stuck or abandoned match). Each
+  // socket's own close handler does the actual cleanup, same as if players had left normally.
+  const kickMatch = path.match(/^\/api\/kick-room\/([^/]+)$/);
+  if (kickMatch && req.method === 'POST') {
+    if (!checkKey(req, url)) { sendJSON(res, 401, { ok: false, error: 'Wrong or missing key.' }); return; }
+    const room = rooms.get(decodeURIComponent(kickMatch[1]));
+    if (!room) { sendJSON(res, 404, { ok: false, error: 'Room not found (it may have already emptied out).' }); return; }
+    let count = 0;
+    for (const p of room.players.values()) { try { p.ws.close(); } catch (e) {} count++; }
+    sendJSON(res, 200, { ok: true, kicked: count });
     return;
   }
 
